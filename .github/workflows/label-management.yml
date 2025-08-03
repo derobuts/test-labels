@@ -1,0 +1,21 @@
+# .github/workflows/label-management.yml
+name: Label Management Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issues:
+    types: [opened, edited]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'sync-labels'
+        type: choice
+        options:
+        - sync-labels
+        - auto-label-pr
+        - cleanup-labels
+
+# ... (rest of the pipeline content from the first artifact)
