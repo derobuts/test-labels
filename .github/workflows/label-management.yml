@@ -1,5 +1,4 @@
-# .github/workflows/label-management.yml
-name: Label Management Pipeline
+name: Auto Label with Unix Timestamp
 
 on:
   pull_request:
@@ -18,4 +17,40 @@ on:
         - auto-label-pr
         - cleanup-labels
 
-# ... (rest of the pipeline content from the first artifact)
+jobs:
+  add-timestamp-label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    
+    steps:
+    - name: Add event timestamp label
+      if: github.event_name != 'workflow_dispatch'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const unixTimestamp = Math.floor(Date.now() / 1000);
+          const eventAction = context.payload.action;
+          const labelName = `${eventAction}-${unixTimestamp}`;
+          
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            labels: [labelName]
+          });
+          
+          console.log(`Added label: ${labelName}`);
+    
+    - name: Add workflow timestamp label
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const unixTimestamp = Math.floor(Date.now() / 1000);
+          const action = '${{ github.event.inputs.action }}';
+          const labelName = `${action}-${unixTimestamp}`;
+          
+          console.log(`Created workflow label: ${labelName}`);
