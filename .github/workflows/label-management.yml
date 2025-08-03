@@ -33,8 +33,27 @@ jobs:
         script: |
           const unixTimestamp = Math.floor(Date.now() / 1000);
           const eventAction = context.payload.action;
+          
+          // Create label name from event action and timestamp
           const labelName = `${eventAction}-${unixTimestamp}`;
           
+          // Create the label first (if it doesn't exist)
+          try {
+            await github.rest.issues.createLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: labelName,
+              color: getColorForEventType(eventAction),
+              description: `Event: ${eventAction} at ${new Date().toISOString()}`
+            });
+          } catch (error) {
+            // Label might already exist, that's okay
+            if (error.status !== 422) {
+              console.log(`Error creating label ${labelName}: ${error.message}`);
+            }
+          }
+          
+          // Apply the label to the PR or issue
           await github.rest.issues.addLabels({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -43,6 +62,19 @@ jobs:
           });
           
           console.log(`Added label: ${labelName}`);
+          console.log(`Event type: ${eventAction}`);
+          console.log(`Unix timestamp: ${unixTimestamp}`);
+          
+          // Helper function to assign colors based on event type
+          function getColorForEventType(action) {
+            switch(action) {
+              case 'opened': return '0e8a16';      // Green - new items
+              case 'synchronize': return '0075ca';  // Blue - updates
+              case 'reopened': return 'fbca04';     // Yellow - reopened
+              case 'edited': return 'd876e3';      // Purple - edits
+              default: return 'ededed';            // Gray - default
+            }
+          }
     
     - name: Add workflow timestamp label
       if: github.event_name == 'workflow_dispatch'
