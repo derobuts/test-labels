@@ -1,21 +1,52 @@
-# .github/workflows/label-management.yml
-name: Label Management Pipeline
+name: Auto Label with Unix Timestamp
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  issues:
-    types: [opened, edited]
-  workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'sync-labels'
-        type: choice
-        options:
-        - sync-labels
-        - auto-label-pr
-        - cleanup-labels
+    types: [labeled]
 
-# ... (rest of the pipeline content from the first artifact)
+jobs:
+  add-timestamp-label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Add event timestamp label to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const unixTimestamp = Math.floor(Date.now() / 1000);
+            const prNumber = context.issue.number;
+            const labelNameTriggered = context.payload.label.name;
+
+            // Generate new label: "<labelNameTriggered>-<timestamp>"
+            const labelNameWithTimestamp = `${labelNameTriggered}-${unixTimestamp}`;
+
+            // Get existing labels to check for existing timestamped version of this label
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            // Check if a label already exists with this label prefix + timestamp suffix
+            const hasMatchingTimestampLabel = labels.some(label => 
+              new RegExp(`^${labelNameTriggered}-\\d+$`).test(label.name)
+            );
+
+            if (hasMatchingTimestampLabel) {
+              console.log(`PR #${prNumber} already has timestamp label for '${labelNameTriggered}', skipping`);
+              return;
+            }
+
+            // Add the new label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: [labelNameWithTimestamp]
+            });
+
+            console.log(`Added label: ${labelNameWithTimestamp} to PR #${prNumber}`);
