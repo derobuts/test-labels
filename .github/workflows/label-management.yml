@@ -11,40 +11,42 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    
+
     steps:
-    - name: Add event timestamp label to PR
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const unixTimestamp = Math.floor(Date.now() / 1000);
-          const eventAction = context.payload.action;
-          const prNumber = context.issue.number;
-          
-          // Get existing labels to check for existing timestamps
-          const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: prNumber
-          });
-          
-          // Check if there's already a timestamp label
-          const hasTimestampLabel = labels.some(label => 
-            /-\d+$/.test(label.name)
-          );
-          
-          if (hasTimestampLabel) {
-            console.log(`PR #${prNumber} already has timestamp label, skipping`);
-            return;
-          }
-          
-          const labelName = `${eventAction}-${unixTimestamp}`;
-          
-          await github.rest.issues.addLabels({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: prNumber,
-            labels: [labelName]
-          });
-          
-          console.log(`Added label: ${labelName} to PR #${prNumber}`);
+      - name: Add event timestamp label to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const unixTimestamp = Math.floor(Date.now() / 1000);
+            const prNumber = context.issue.number;
+            const labelNameTriggered = context.payload.label.name;
+
+            // Generate new label: "<labelNameTriggered>-<timestamp>"
+            const labelNameWithTimestamp = `${labelNameTriggered}-${unixTimestamp}`;
+
+            // Get existing labels to check for existing timestamped version of this label
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            // Check if a label already exists with this label prefix + timestamp suffix
+            const hasMatchingTimestampLabel = labels.some(label => 
+              new RegExp(`^${labelNameTriggered}-\\d+$`).test(label.name)
+            );
+
+            if (hasMatchingTimestampLabel) {
+              console.log(`PR #${prNumber} already has timestamp label for '${labelNameTriggered}', skipping`);
+              return;
+            }
+
+            // Add the new label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: [labelNameWithTimestamp]
+            });
+
+            console.log(`Added label: ${labelNameWithTimestamp} to PR #${prNumber}`);
