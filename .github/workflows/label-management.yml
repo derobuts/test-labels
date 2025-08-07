@@ -2,20 +2,7 @@ name: Auto Label with Unix Timestamp
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  issues:
-    types: [opened, edited]
-  workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'sync-labels'
-        type: choice
-        options:
-        - sync-labels
-        - auto-label-pr
-        - cleanup-labels
+    types: [labeled]
 
 jobs:
   add-timestamp-label:
@@ -26,88 +13,38 @@ jobs:
       pull-requests: write
     
     steps:
-    - name: Add Unix timestamp to existing labels
-      if: github.event_name != 'workflow_dispatch'
+    - name: Add event timestamp label to PR
       uses: actions/github-script@v7
       with:
         script: |
           const unixTimestamp = Math.floor(Date.now() / 1000);
+          const eventAction = context.payload.action;
+          const prNumber = context.issue.number;
           
-          // Get current labels on the PR/issue
-          const { data: currentIssue } = await github.rest.issues.get({
+          // Get existing labels to check for existing timestamps
+          const { data: labels } = await github.rest.issues.listLabelsOnIssue({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: context.issue.number
+            issue_number: prNumber
           });
           
-          const currentLabels = currentIssue.labels || [];
-          console.log(`Found ${currentLabels.length} existing labels`);
+          // Check if there's already a timestamp label
+          const hasTimestampLabel = labels.some(label => 
+            /-\d+$/.test(label.name)
+          );
           
-          if (currentLabels.length === 0) {
-            console.log('No existing labels to timestamp');
+          if (hasTimestampLabel) {
+            console.log(`PR #${prNumber} already has timestamp label, skipping`);
             return;
           }
           
-          // Create timestamped versions of existing labels
-          const timestampedLabels = [];
+          const labelName = `${eventAction}-${unixTimestamp}`;
           
-          for (const label of currentLabels) {
-            const originalName = label.name;
-            const originalColor = label.color;
-            const originalDescription = label.description || '';
-            
-            // Skip if label already has a timestamp (avoid double-timestamping)
-            if (originalName.match(/-\d+$/)) {
-              console.log(`Skipping already timestamped label: ${originalName}`);
-              timestampedLabels.push(originalName);
-              continue;
-            }
-            
-            // Create new timestamped label name
-            const timestampedName = `${originalName}-${unixTimestamp}`;
-            
-            // Create the timestamped label in the repository
-            try {
-              await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: timestampedName,
-                color: originalColor,
-                description: `${originalDescription} (timestamped: ${new Date().toISOString()})`
-              });
-              console.log(`Created timestamped label: ${timestampedName}`);
-            } catch (error) {
-              // Label might already exist, that's okay
-              if (error.status !== 422) {
-                console.log(`Error creating label ${timestampedName}: ${error.message}`);
-              }
-            }
-            
-            timestampedLabels.push(timestampedName);
-          }
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: prNumber,
+            labels: [labelName]
+          });
           
-          // Replace all labels with timestamped versions
-          if (timestampedLabels.length > 0) {
-            await github.rest.issues.setLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: timestampedLabels
-            });
-            
-            console.log(`Replaced labels with timestamped versions:`);
-            console.log(`Original: ${currentLabels.map(l => l.name).join(', ')}`);
-            console.log(`Timestamped: ${timestampedLabels.join(', ')}`);
-            console.log(`Unix timestamp: ${unixTimestamp}`);
-          }
-    
-    - name: Add workflow timestamp label
-      if: github.event_name == 'workflow_dispatch'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const unixTimestamp = Math.floor(Date.now() / 1000);
-          const action = '${{ github.event.inputs.action }}';
-          const labelName = `${action}-${unixTimestamp}`;
-          
-          console.log(`Created workflow label: ${labelName}`);
+          console.log(`Added label: ${labelName} to PR #${prNumber}`);
